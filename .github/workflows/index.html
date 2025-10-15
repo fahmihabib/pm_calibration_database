@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Machine PM Database</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body class="bg-gray-100 p-6 text-sm text-gray-900">
+
+  <div class="max-w-7xl mx-auto bg-white/80 backdrop-blur-md p-6 rounded-2xl shadow-2xl space-y-6 border border-cyan-500/30">
+    <h1 class="text-3xl font-extrabold text-center text-cyan-600 drop-shadow-lg">
+      🛠️ Machine Preventive Maintenance (PM) Database
+    </h1>
+
+    <!-- Input Form -->
+    <form id="pmForm" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <input class="border p-2 rounded" placeholder="Machine Name" required id="machineName" />
+      <input class="border p-2 rounded" placeholder="Type" required id="type" />
+      <input class="border p-2 rounded" placeholder="Cal ID" required id="calID" />
+      <select class="border p-2 rounded" id="calType">
+        <option>Internal</option>
+        <option>External</option>
+      </select>
+      <input class="border p-2 rounded" placeholder="Serial Number" required id="serialNumber" />
+      <input class="border p-2 rounded" placeholder="Location" required id="location" />
+      <input type="date" class="border p-2 rounded" required id="lastCalDate" />
+      <select class="border p-2 rounded" id="interval">
+        <option value="3">3 months</option>
+        <option value="6">6 months</option>
+        <option value="9">9 months</option>
+        <option value="12">12 months</option>
+        <option value="24">24 months</option>
+        <option value="36">36 months</option>
+      </select>
+      <button type="submit" class="col-span-1 md:col-span-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white py-2 rounded-lg hover:scale-105 hover:shadow-lg transition">➕ Add Machine</button>
+      <button type="button" onclick="downloadExcel()" class="bg-gradient-to-r from-green-600 to-emerald-500 text-white py-2 rounded-lg hover:scale-105 hover:shadow-lg transition">⬇️ Download Excel</button>
+      <input type="file" accept=".xlsx" onchange="uploadExcel(event)" class="bg-white border border-cyan-500/40 rounded p-2" />
+      <button onclick="deleteAll()" type="button" class="bg-gradient-to-r from-red-600 to-pink-500 text-white py-2 rounded-lg hover:scale-105 hover:shadow-lg transition">🗑️ Delete All</button>
+    </form>
+
+    <!-- Search Box -->
+    <div class="mt-4">
+      <input id="searchInput" type="text" placeholder="🔍 Search Machine Name / Type / Cal ID / Location..." class="w-full md:w-1/2 border border-cyan-500/40 bg-white text-gray-900 placeholder-gray-400 p-2 rounded-lg shadow-inner focus:outline-none focus:ring-2 focus:ring-cyan-400" onkeyup="renderTable()" />
+    </div>
+
+    <!-- Count Display -->
+    <div id="countDisplay" class="mt-2 text-cyan-600 font-semibold"></div>
+
+    <!-- Machine Table -->
+    <div class="overflow-x-auto">
+      <table id="machineTable" class="min-w-full text-left border mt-4">
+        <thead class="bg-cyan-600/20 text-cyan-800 uppercase tracking-wider">
+          <tr>
+            <th class="p-2">Machine Name</th>
+            <th class="p-2">Type</th>
+            <th class="p-2">Cal ID (edit)</th>
+            <th class="p-2">Cal Type (edit)</th>
+            <th class="p-2">Serial No (edit)</th>
+            <th class="p-2">Location (edit)</th>
+            <th class="p-2">Last Cal Date (edit)</th>
+            <th class="p-2">Interval (edit)</th>
+            <th class="p-2">Next Cal Date</th>
+            <th class="p-2">Days Left</th>
+            <th class="p-2">Delete</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody" class="bg-white text-gray-900"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let data = [];
+
+    document.getElementById("pmForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      const obj = {
+        machineName: machineName.value,
+        type: type.value,
+        calID: calID.value,
+        calType: calType.value,
+        serialNumber: serialNumber.value,
+        location: location.value,
+        lastCalDate: lastCalDate.value,
+        interval: parseInt(interval.value),
+        nextCalDate: calcNextDate(lastCalDate.value, parseInt(interval.value)),
+      };
+      data.push(obj);
+      sortData();
+      renderTable();
+      this.reset();
+    });
+
+    function calcNextDate(dateStr, months) {
+      const d = new Date(dateStr);
+      d.setMonth(d.getMonth() + months);
+      return d.toISOString().split("T")[0];
+    }
+
+    function daysLeft(date) {
+      const today = new Date();
+      const due = new Date(date);
+      return Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+    }
+
+    function getColorClass(days) {
+      if (days <= 3) return "bg-red-200 text-red-800 font-bold";
+      if (days <= 10) return "bg-orange-200 text-orange-800 font-semibold";
+      return "bg-green-200 text-green-800";
+    }
+
+    function renderTable() {
+      const searchTerm = document.getElementById("searchInput")?.value?.toLowerCase() || "";
+      const tbody = document.getElementById("tableBody");
+      const countDisplay = document.getElementById("countDisplay");
+      tbody.innerHTML = "";
+
+      let visibleCount = 0;
+
+      data.forEach((row, idx) => {
+        const combinedText = `${row.machineName} ${row.type} ${row.calID} ${row.location}`.toLowerCase();
+        if (!combinedText.includes(searchTerm)) return;
+
+        visibleCount++;
+
+        const days = daysLeft(row.nextCalDate);
+        const tr = document.createElement("tr");
+        tr.className = "hover:bg-cyan-100 transition";
+        tr.innerHTML = `
+          <td class="border p-2">${row.machineName}</td>
+          <td class="border p-2">${row.type}</td>
+          <td class="border p-2"><input class="w-full border rounded p-1" value="${row.calID}" onchange="editField(${idx}, 'calID', this.value)" /></td>
+          <td class="border p-2">
+            <select class="w-full border rounded p-1" onchange="editField(${idx}, 'calType', this.value)">
+              <option ${row.calType === "Internal" ? "selected" : ""}>Internal</option>
+              <option ${row.calType === "External" ? "selected" : ""}>External</option>
+            </select>
+          </td>
+          <td class="border p-2"><input class="w-full border rounded p-1" value="${row.serialNumber}" onchange="editField(${idx}, 'serialNumber', this.value)" /></td>
+          <td class="border p-2"><input class="w-full border rounded p-1" value="${row.location}" onchange="editField(${idx}, 'location', this.value)" /></td>
+          <td class="border p-2"><input type="date" class="w-full border rounded p-1" value="${row.lastCalDate}" onchange="editField(${idx}, 'lastCalDate', this.value, true)" /></td>
+          <td class="border p-2">
+            <select class="w-full border rounded p-1" onchange="editField(${idx}, 'interval', this.value, true)">
+              <option value="3" ${row.interval == 3 ? "selected" : ""}>3</option>
+              <option value="6" ${row.interval == 6 ? "selected" : ""}>6</option>
+              <option value="9" ${row.interval == 9 ? "selected" : ""}>9</option>
+              <option value="12" ${row.interval == 12 ? "selected" : ""}>12</option>
+              <option value="24" ${row.interval == 24 ? "selected" : ""}>24</option>
+              <option value="36" ${row.interval == 36 ? "selected" : ""}>36</option>
+            </select>
+          </td>
+          <td class="border p-2 ${getColorClass(days)}">${row.nextCalDate}</td>
+          <td class="border p-2 text-center">${days} days</td>
+          <td class="border p-2 text-center"><button onclick="deleteRow(${idx})" class="bg-gradient-to-r from-red-600 to-pink-500 text-white px-3 py-1 rounded-lg hover:scale-110 hover:shadow-lg transition">Delete</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      countDisplay.textContent = `Total Machines: ${visibleCount}`;
+    }
+
+    function editField(index, field, value, recalc = false) {
+      if (field === "interval") value = parseInt(value);
+      data[index][field] = value;
+
+      if (recalc) {
+        const { lastCalDate, interval } = data[index];
+        data[index].nextCalDate = calcNextDate(lastCalDate, interval);
+      }
+
+      sortData();
+      renderTable();
+    }
+
+    function sortData() {
+      data.sort((a, b) => new Date(a.nextCalDate) - new Date(b.nextCalDate));
+    }
+
+    function deleteRow(index) {
+      data.splice(index, 1);
+      renderTable();
+    }
+
+    function deleteAll() {
+      if (confirm("Are you sure to delete all entries?")) {
+        data = [];
+        renderTable();
+      }
+    }
+
+    function downloadExcel() {
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, "Machine PM");
+      XLSX.writeFile(wb, "machine_pm_data.xlsx");
+    }
+
+    function uploadExcel(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      const dataArr = new Uint8Array(e.target.result);
+      const wb = XLSX.read(dataArr, { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const imported = XLSX.utils.sheet_to_json(sheet);
+      data = imported.map(r => ({
+        ...r,
+        interval: parseInt(r.interval),
+        nextCalDate: calcNextDate(r.lastCalDate, parseInt(r.interval)),
+      }));
+      sortData();
+      renderTable();
+    } catch (err) {
+      alert("⚠️ Gagal baca fail Excel. Pastikan format betul (.xlsx) dan bukan rosak.");
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  return; // pastikan fungsi tamat lepas ni
+
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const wb = XLSX.read(e.target.result, { type: "binary" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const imported = XLSX.utils.sheet_to_json(sheet);
+        data = imported.map(r => ({
+          ...r,
+          interval: parseInt(r.interval),
+          nextCalDate: calcNextDate(r.lastCalDate, parseInt(r.interval)),
+        }));
+        sortData();
+        renderTable();
+      };
+      reader.readAsBinaryString(file);
+    }
+  </script>
+
+</body>
+</html>
