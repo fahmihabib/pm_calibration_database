@@ -197,6 +197,31 @@
     }
 
     function uploadExcel(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      const dataArr = new Uint8Array(e.target.result);
+      const wb = XLSX.read(dataArr, { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const imported = XLSX.utils.sheet_to_json(sheet);
+      data = imported.map(r => ({
+        ...r,
+        interval: parseInt(r.interval),
+        nextCalDate: calcNextDate(r.lastCalDate, parseInt(r.interval)),
+      }));
+      sortData();
+      renderTable();
+    } catch (err) {
+      alert("⚠️ Gagal baca fail Excel. Pastikan format betul (.xlsx) dan bukan rosak.");
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  return; // pastikan fungsi tamat lepas ni
+
       const file = event.target.files[0];
       if (!file) return;
       const reader = new FileReader();
